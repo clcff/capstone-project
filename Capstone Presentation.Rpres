@@ -1,0 +1,57 @@
+Capstone Presentation
+========================================================
+author: Claudio Freitas
+date: 06/11/2015
+
+Coursera Data Science Specialization
+
+First Slide
+========================================================
+
+- The idea of this project is to analyse the Yelp database and create a model to predict how many stars a user would grant for a certain business.
+- The database is available in the following link:
+
+https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/yelp_dataset_challenge_academic_dataset.zip
+
+- The database is very extensive and covers many different users and multiple kinds of business. My first idea was to divide the businesses' types into major groups.
+
+Second Slide 
+========================================================
+
+- Each business is defined as a combination of worlds (ex. Restaurant, Italian, bar). My idea was to put together in a "super group" all businesses with at least one word in common using a natural language algorithm with the "tm" package.
+
+- My idea is to create a specific model for a specific user using its observations within this "super group". My concern is that there will be not enough data for a single user. 
+
+- My concerns were justified, it is not easy to find more than 50 or 60 observations for a single user within a "super group". Nevertheless there are some.
+
+Third Slide 
+========================================================
+Model 1 was developed with caret package and random forrest algorithm. It was a good result with userid "uZbTb-u-GVjTa2gtQfry5g" with over 300 observations: 
+
+- Train: Accuracy : Accuracy : 0.8822 ## 95% CI : (0.8399, 0.9165) ## No Information Rate : 0.532 ##  P-Value [Acc > NIR] : < 2.2e-16 ##  Kappa : 0.7963 ## Mcnemar's Test P-Value : NA      
+
+- Test: Accuracy : 0.5641 ## 95% CI : (0.4914, 0.6348) ## No Information Rate : 0.5333 ##         
+  P-Value [Acc > NIR] : 0.2151 ## Kappa : 0.1686 ## Mcnemar's Test P-Value : NA      
+
+Fourth Slide 
+========================================================
+- I included the friends of the user as a proxy of the user himself. I use a natural language algorithm to read the code of each friend to create a new file with user's and his friends' data.
+
+- A second model was created with the new file for user "1uhipArheEVbwWyoAbKAGg" with around 60 observations and his friends observations:
+
+- Train: Accuracy : 0.7734 ## 95% CI : (0.7295, 0.8132) ## No Information Rate : 0.4163 ## P-Value [Acc > NIR] : < 2.2e-16 ## ## Kappa : 0.679 ## Mcnemar's Test P-Value : NA
+
+- Test: Accuracy : 0.3968 ## 95% CI : (0.2757, 0.528) ## No Information Rate : 0.4444 ## P-Value [Acc > NIR] : 0.8122 ## ## Kappa : 0.0443 ## Mcnemar's Test P-Value : NA
+
+Fifth Slide 
+====================================================
+Conclusions
+
+- First model showed good results as expected, as just one user observations were used. However it is needed many observations for a good model, which is not always the case.
+
+- The second model showed promising results. Mainly considering that train set was just friends and test set just the user himself.
+
+- Second model has some practical applications. A new user or an user with limited observations can be modeled and have good predictions based on his friends.
+
+- It is needed to test this approach with more users. However, I have a limited amount of time for this project.
+
