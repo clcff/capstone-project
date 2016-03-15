@@ -1,0 +1,328 @@
+---
+title: "Data Science Capstone"
+author: "claudio freitas"
+date: "Wednesday, November 04, 2015"
+output: word_document
+---
+
+##Final Project Data Science Capstone
+
+Below is the final project for Data Science Capstone by Coursera. The project was developed in a Windows 7 platform with R studio Version 0.98.1087.
+
+##Executive Summary
+
+The project uses data collected from the website Yelp. Yelp is a business founded in 2004 in ordet to "help people find great local business like dentists, hair stylists and mechanics". Currently Yelp has around 83 million unique monthly visitors. The goal of this particular project is to try to predict how many stars an user would grant to a particular business. The first step would be to separate business to major big groups of comparable businesses. As a first attempt I will use the user큦 own opinions to find out a pattern that would help to predict evaluations of new potential businesses. After that I will try to expand the observation to include user큦 friends as a proxy of the user's opinions, so that users' with few observations and new users in the site could still have a predictive model.
+
+##Data Source
+
+The training data for this project is available here:
+
+https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/yelp_dataset_challenge_academic_dataset.zip
+
+The data is divided among five different files. As the dataset is extremely large, I decided to download it to my computer. The files are in JSON format.
+
+
+##Data Collection and reproducibility
+
+Collecting data and ensuring reproducibility.
+
+```{r, echo=TRUE}
+library(jsonlite)
+library(R.utils)
+library(caret)
+library(e1071)
+library(tm)
+library(caretEnsemble)
+library(pROC)
+library(mlbench)
+library(cwhmisc)
+
+
+setwd("C:/Users/Cla/Documents/yelp_dataset_challenge_academic_dataset")
+
+#WE WILL USE JUST FILE 1, 3 AND 5 IN THIS PROJECT:
+
+yelpfileraw1<- stream_in(file("yelp_academic_dataset_business.json"))
+#yelpfileraw2<- stream_in(file("yelp_academic_dataset_checkin.json"))
+yelpfileraw3<- stream_in(file("yelp_academic_dataset_review.json"))
+#yelpfileraw4<- stream_in(file("yelp_academic_dataset_tip.json"))
+yelpfileraw5<- stream_in(file("yelp_academic_dataset_user.json"))
+
+
+yelpfile1<- flatten(yelpfileraw1)
+#yelpfile2<- flatten(yelpfileraw2)
+yelpfile3<- flatten(yelpfileraw3)
+#yelpfile4<- flatten(yelpfileraw4)
+yelpfile5<- flatten(yelpfileraw5)
+
+##REPRODUCILITY
+set.seed(123)
+
+```
+
+##Cleaning Variables
+
+First we have to clean the data. My first task is to transform most characters' data into numeric variables that could be analysed by the model. Additionally I have to take care of NA's.
+
+```{r, echo=TRUE}
+yelpfile1[is.na(yelpfile1)]<-0
+yelpfile1$attributes.Attire<- factor(yelpfile1$attributes.Attire, labels=c("0","1","2","3"))
+yelpfile1$attributes.Attire<- as.integer(yelpfile1$attributes.Attire)
+
+yelpfile1$attributes.Alcohol<- factor(yelpfile1$attributes.Alcohol, labels=c("0","1","2","3"))
+yelpfile1$attributes.Alcohol<- as.integer(yelpfile1$attributes.Alcohol)
+
+yelpfile1[ ,36]<- factor(yelpfile1[ ,36], labels=c("0","1","2","3","4"))
+yelpfile1[ ,36]<- as.integer(yelpfile1[ ,36])
+
+yelpfile1[ ,46]<- factor(yelpfile1[ ,46], labels=c("0","1","2","3"))
+yelpfile1[ ,46]<- as.integer(yelpfile1[ ,46])
+
+yelpfile1$open<- factor(yelpfile1$open, labels=c("0","1"))
+yelpfile1$open<- as.integer(yelpfile1$open)
+
+yelpfile1$state<- factor(yelpfile1$state, labels=c("0","1","2","3","4","5","6","7","8","9","10","11","12",
+                                                   "13","14","15","16","17","18","19","20","21","22","23",                                                   
+                                                   "24","25")) 
+yelpfile1$state<- as.integer(yelpfile1$state)
+
+yelpfile1[ ,52]<- factor(yelpfile1[ ,52], labels=c("0","1","2","3"))
+yelpfile1[ ,52]<- as.integer(yelpfile1[ ,52])
+
+yelpfile1$attributes.Smoking<- factor(yelpfile1$attributes.Smoking, labels=c("0","1","2","3"))
+yelpfile1$attributes.Smoking<- as.integer(yelpfile1$attributes.Smoking)
+
+yelpfile1[ ,30]<-as.character(yelpfile1[ ,30])
+yelpfile1[ ,30]<- factor(yelpfile1[ ,30], labels=c("0","1","2","3"))
+yelpfile1[ ,30]<- as.integer(yelpfile1[ ,30])
+
+yelpfile1[ ,58]<- factor(yelpfile1[ ,58], labels=c("0","1","2","3","4"))
+yelpfile1[ ,58]<- as.integer(yelpfile1[ ,58])
+
+```
+
+
+##Choose a kind of business to model.
+
+The Yelp site provides evaluations of many different kinds of business, from hotels to bars, from dentists to pet shops. I really do not believe it is fair to compare very different kinds of business that have few features in common. However, to be just too selective is also a problem, as we would narrow the search in a way that would reduce the observations so much and could make it difficult to create a prediction model. In an attempt to solve this "trade off" I used a natural language algorithm that reads the names related with each business (ex. "bars, restaurants, lounge"") and search for other business with at least one world in common. All the businesses with at least one world in common with a given business will be considered somewhat similar. Additionally I choose one particular user_id to model and I also try to find how many observations are there for user (higher than 200 obs):
+
+```{r, echo=TRUE}
+businessID<-"KayYbHCt-RkbGcPdGOThNg"
+userid<-"1uhipArheEVbwWyoAbKAGg"
+##NATURAL LANGUAGE ALGORITHM
+## READING ALL CATEGORIES AND EXTRACTING KEY WORDS
+## CREATING A 0/1S MATRIX OF KEY WORDS
+
+file1_userid<-subset(yelpfile1, yelpfile1[ ,1] == businessID)
+
+testTM<- yelpfile1$categories
+testTM<- VectorSource(testTM)
+testTM<-Corpus(testTM)
+dtm <- DocumentTermMatrix(testTM)
+dtm<-as.matrix(dtm)
+
+##ADDING THE BUSINESS ID TO THE 0/1S MATRIX OF KEY WORDS
+
+newdtm<- cbind(yelpfile1$business_id, dtm)
+
+##SUBSETING subnewdtm1 IN A PARTICULAR BUSINESS ID 
+subnewdtm1<- subset(newdtm, newdtm[ ,1] == businessID)
+subnewdtm1<-data.frame(subnewdtm1)
+
+##FINDING SIMILAR BUSINESS IDS USING THE MATRIX
+
+n<- dim(subnewdtm1)[2]
+
+for(i in 1:n){
+      if(subnewdtm1[ ,i]==0){subnewdtm1[1,i]<-NA}
+}
+
+add<-!is.na(subnewdtm1)
+newdtm.inter<-newdtm[ ,add]
+business_id<- newdtm.inter[ ,1]
+newdtm.inter<- newdtm.inter[ ,-1]
+
+newdtm.inter[is.na(newdtm.inter)]<-0
+n1<- dim(newdtm.inter)[1]
+n2<- dim(newdtm.inter)[2]
+
+sum<- matrix(ncol=1, nrow=n1)
+
+for(j in 1:n1){
+   count<-0
+      for(i in 1:n2){
+        if(newdtm.inter[j,i]=="1"){count<-1}
+          sum[j,1]<-count
+    }
+  }
+
+final<-cbind(business_id, sum)
+final<-subset(final, final[ ,2]==1)
+subfile3<- merge(yelpfile3, final, by="business_id")
+
+##OBSERVATIONS PER USER (LIMITED TO HIGHER THAN 200 OBS)
+ids<-c(table(subfile3$user_id))
+sub.ids<- subset(ids, ids>=200)
+sub.ids<- head(sub.ids, 10)
+print(sub.ids)
+
+```
+
+
+##Cleaning the Data again to focus on a particular user_id 
+
+I have to focus on a particular user_id to create the model. I also need to reduce the number of columns that will not be helpful in anyway to the prediction model.
+
+```{r, echo=TRUE}
+customer.file<- subset(subfile3, subfile3$user_id == userid)
+c.file<- customer.file[ ,-c(2,3,5,6,7, 11)]
+file1.business<- merge(yelpfile1, c.file, by="business_id")
+
+##EXTRACTING COLUNMS THAT ARE NOT THAT IMPORTANT FOR THE PREDICTIVE MODEL
+
+file1.business.net<-file1.business[-c(1,2,4,5,7,8,9,12:28)]
+```
+
+##Random Forest Machine Learning Model for an user_id observations:
+
+Now it is time to divide the data into training and test set and to try a random forest predictive model so that I can predict the number of stars granted to a particular business based of the historical observations of a single user_id:
+
+```{r, echo=TRUE}
+##DATA DIVISION BETWEEN TRAINING AND VALIDATION SET
+
+newtrain2 <- createDataPartition(y=file1.business.net$stars.y, p=0.60, list = F)
+newtrain <- file1.business.net[newtrain2, ]
+newvalidation <- file1.business.net[-newtrain2, ]
+
+
+#ML MODEL
+
+modelrf<- train(stars.y ~., data=newtrain, method="rf", prox=T)             
+prediction3 <- predict(modelrf, newdata = newtrain)
+prediction3<-round(prediction3)
+```
+
+##Testing the Random Forrest model in the Training set and in the Cross Validation set
+
+Now I use the ConfusionMatrix function to analyse the model with the train set:
+
+```{r, echo=TRUE}
+print("CONFUSION MATRIX OF AN SPECIFIC USER TRAIN:")
+c2<-confusionMatrix(prediction3, newtrain$stars.y)
+print(c2)
+```
+
+And the test set:
+
+```{r, echo=TRUE}
+prediction2 <- predict(modelrf, newdata = newvalidation)
+prediction4<-as.integer(round(prediction2))
+
+c4<-confusionMatrix(prediction4, newvalidation$stars.y)
+print("CONFUSION MATRIX OF AN SPECIFIC USER TEST:")
+print(c4)
+```
+
+##T Test as a way to evaluate the Model큦 performance
+
+The confusion matrix provides a good idea of how acurate the model is. The result of this specific model were not particularly impressive. I believe one of the reasons for this result was the small number of observations.In fact it is very difficult to find users with huge number of evaluations (200 or more) in one particular group or "super group" of businesses. Another way to evaluate the performance of the model is to do a T Test to find out if the differences between the predictions and the real observations are different from zero with a 95% confidence level:
+
+```{r, echo=TRUE}
+print("T Test:")
+ttest2<- t.test(prediction4-newvalidation$stars.y)
+print(ttest2)
+```
+
+##Testing an alternative model using user_id's friends as a proxy of the user_id
+
+An interesting way to solve the problem of few observations for a model is to use the user's friends as a proxy of the user himself. Adding all the friends' observations would, hopefully, create enough data for a more robust model. One additional advantage of this model would be to enable a prediction for users with limited observations and also new users. 
+
+For this task we use a natural language algorithm to read the identification of each friend and to create a new file with user's and his friends' data:
+
+```{r, echo=TRUE}
+##Natural language algorithm:
+
+yelpfile5.friends<-subset(yelpfile5, user_id == userid)
+testTM2<- yelpfile5.friends$friends
+testTM2<- VectorSource(testTM2)
+testTM2<-Corpus(testTM2)
+t2<- testTM2
+dtm2 <- DocumentTermMatrix(testTM2)
+dtm2<-as.matrix(dtm2)
+
+
+columns<-colnames(dtm2)
+len<-length(columns)
+columns[len+1]<- userid
+subfile3.friends<- subset(subfile3,tolower(subfile3[ ,2]) %in% tolower(columns))
+
+#Extract some columns that are of no interest:
+subfile3.general<- subfile3.friends[ ,-c(5,6,7, 11)]
+
+file1.general<- merge(yelpfile1, subfile3.general, by="business_id")
+```
+
+##Data division between training and test
+
+In order to be very conservative I will train the model with just friends data and will test it in the user_id. Additionally I extract some columns that are of no importance for the model.
+
+```{r, echo=TRUE}
+file1.friends.net<- subset(file1.general,file1.general$user_id!= userid )
+file1.friends.test<-subset(file1.general,file1.general$user_id== userid )
+
+##EXTRACTING COLUNMS THAT ARE NOT THAT IMPORTANT FOR THE PREDICTIVE MODEL
+
+file1.friends.net<-file1.friends.net[ ,-c(1,2,4,5,7,8,9,12:27)]
+file1.friends.test<-file1.friends.test[ ,-c(1,2,4,5,7,8,9,12:27)]
+file1.friends.net<-file1.friends.net[ ,-c(83,84)]
+file1.friends.test<-file1.friends.test[ ,-c(83,84)]
+```
+
+##Alternative Random Forrest Model 
+
+Below it is created the new random Forrest model and it is evaluation with the confusionMatrix function.
+
+
+```{r, echo=TRUE}
+model.friendsrf<- train(stars.y ~., data=file1.friends.net, method="rf", prox=T)             
+prediction.friends <- predict(model.friendsrf, newdata = file1.friends.net)
+prediction.friends<-round(prediction.friends)
+
+print("CONFUSION MATRIX OF FRIENDS' USER TRAIN:")
+
+cfriends<-confusionMatrix(prediction.friends, file1.friends.net$stars.y)
+
+print(cfriends)
+```
+
+And the test set:
+
+```{r, echo=TRUE}
+## TEST DATA
+
+prediction.userid <- predict(model.friendsrf, newdata = file1.friends.test)
+prediction.userid<-round(prediction.userid)
+
+print("CONFUSION MATRIX OF AN SPECIFIC USER TEST USING FRIENDS MODEL:")
+
+c_user<-confusionMatrix(prediction.userid, file1.friends.test$stars.y)
+print(c_user)
+```
+
+##T Test as a way to evaluate the Model큦 performance
+
+As above I use the T Test as a way to evaluate the model:
+```{r, echo=TRUE}
+print("T Test:")
+ttest5<- t.test(prediction.userid-file1.friends.test$stars.y)
+print(ttest5)
+```
+
+##Conclusion
+
+The first model showed results that were interesting. It is clear that We cannot use the whole data to make a prediction, we have to subset data in order to refine the data and make a prediction based on similar business and similar users, if possible a single user. The risk here is to subset so much  that there is not suficient data for a robust prediction model. Obviously there is a trade off here, if we subset the data too much there will be few users with enough data for good prediction model. In this example we used the userid "1uhipArheEVbwWyoAbKAGg" with around 60 observations, there are other users with over 300 observations that have better models as shown in the presentation in RPubs.
+
+The second model showed promising results, in fact not that different than the first model, but it was somewhat unexpected that the firends' data would create such an interesting model. Apparently, the user큦 friends' preferences are a good proxy for the user's preferences.In short, We used the friends to create a model and tested it with reasonable results in the users preferences. It was a quite conservative approach to use just the friends observations in the training set. Nevertheless, this seems to be a good solution to be explored further.
+
+This fact leads to some practical solutions. Even a new user or an user with very limited observations can be modeled and have some good preferences predictions based on his friends. Of course it would be better to test this approach with more users. However, due to the limited amount of time for this project I can't explore it further at this moment.
+
